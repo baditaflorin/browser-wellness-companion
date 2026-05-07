@@ -1,13 +1,14 @@
 /**
  * Face Mesh Detector — wraps MediaPipe Face Landmarker
- * Uses @mediapipe/tasks-vision for face landmark detection
+ * Now outputs blendshapes for blink detection.
  */
 
-import { FaceLandmarker, FilesetResolver, DrawingUtils } from '@mediapipe/tasks-vision';
+import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 export interface FaceDetection {
   landmarks: Array<Array<{ x: number; y: number; z: number }>>;
   box: { x: number; y: number; width: number; height: number } | null;
+  blendshapes: Array<{ categoryName: string; score: number }> | null;
 }
 
 export class FaceMeshDetector {
@@ -26,7 +27,7 @@ export class FaceMeshDetector {
       },
       runningMode: 'VIDEO',
       numFaces: 1,
-      outputFaceBlendshapes: false,
+      outputFaceBlendshapes: true,   // enabled for blink detection
       outputFacialTransformationMatrixes: false,
     });
   }
@@ -35,7 +36,6 @@ export class FaceMeshDetector {
     if (!this.faceLandmarker) return null;
 
     const timestamp = performance.now();
-    // MediaPipe requires strictly increasing timestamps
     if (timestamp <= this.lastTimestamp) return null;
     this.lastTimestamp = timestamp;
 
@@ -46,7 +46,6 @@ export class FaceMeshDetector {
         return null;
       }
 
-      // Convert normalized landmarks to an array of {x, y, z}
       const landmarks = result.faceLandmarks.map(face =>
         face.map(lm => ({
           x: lm.x,
@@ -55,7 +54,7 @@ export class FaceMeshDetector {
         }))
       );
 
-      // Compute bounding box from landmarks (in pixel coordinates)
+      // Bounding box from landmarks
       const firstFace = result.faceLandmarks[0];
       let minX = 1, minY = 1, maxX = 0, maxY = 0;
       for (const lm of firstFace) {
@@ -64,7 +63,6 @@ export class FaceMeshDetector {
         if (lm.x > maxX) maxX = lm.x;
         if (lm.y > maxY) maxY = lm.y;
       }
-
       const box = {
         x: minX * video.videoWidth,
         y: minY * video.videoHeight,
@@ -72,9 +70,17 @@ export class FaceMeshDetector {
         height: (maxY - minY) * video.videoHeight,
       };
 
-      return { landmarks, box };
+      // Extract blendshapes for the first face
+      let blendshapes: Array<{ categoryName: string; score: number }> | null = null;
+      if (result.faceBlendshapes && result.faceBlendshapes.length > 0) {
+        blendshapes = result.faceBlendshapes[0].categories.map(c => ({
+          categoryName: c.categoryName,
+          score: c.score,
+        }));
+      }
+
+      return { landmarks, box, blendshapes };
     } catch (e) {
-      // Can happen during rapid tab switching
       console.warn('Face detection error:', e);
       return null;
     }

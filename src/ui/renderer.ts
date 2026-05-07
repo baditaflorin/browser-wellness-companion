@@ -57,6 +57,7 @@ export function renderDashboard(): string {
           <span>Wellness Companion</span>
         </div>
         <div class="dashboard__actions">
+          <button id="btn-settings" class="btn-icon" title="Detection Settings">⚙️</button>
           <button id="btn-recalibrate" class="btn-icon" title="Recalibrate Posture">🔄</button>
           <button id="btn-stop" class="btn-icon" title="Stop Camera">⏹️</button>
         </div>
