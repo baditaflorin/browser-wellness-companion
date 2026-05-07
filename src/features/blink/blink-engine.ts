@@ -21,15 +21,18 @@ interface Landmark {
 }
 
 export class BlinkEngine {
-  private readonly EAR_THRESHOLD = 0.21;
-  private readonly CONSEC_FRAMES = 2;
+  private readonly EAR_THRESHOLD = 0.17;      // tightened from 0.21 — requires more eye closure
+  private readonly CONSEC_FRAMES = 3;          // require 3 consecutive low-EAR frames (was 2)
+  private readonly MIN_BLINK_INTERVAL_MS = 200; // minimum 200ms between blinks to avoid doubles
+  private readonly EAR_SMOOTH_FACTOR = 0.6;    // exponential smoothing to filter noise
 
   private blinkTimestamps: number[] = [];
   private consecBelow = 0;
   private wasBelow = false;
   private totalBlinks = 0;
-  private lastBlinkTime = Date.now();
-  private startTime = Date.now();
+  private lastBlinkTime = 0;
+  private smoothedEAR = 0.3;                   // start with eyes-open value
+  private earInitialized = false;
 
   /**
    * MediaPipe Face Mesh eye landmarks:
@@ -57,18 +60,29 @@ export class BlinkEngine {
       landmarks[263], landmarks[373], landmarks[380]
     );
 
-    const ear = (earLeft + earRight) / 2;
+    const rawEAR = (earLeft + earRight) / 2;
+
+    // Smooth EAR to filter per-frame noise from landmark jitter
+    if (!this.earInitialized) {
+      this.smoothedEAR = rawEAR;
+      this.earInitialized = true;
+    } else {
+      this.smoothedEAR = this.EAR_SMOOTH_FACTOR * this.smoothedEAR + (1 - this.EAR_SMOOTH_FACTOR) * rawEAR;
+    }
+    const ear = this.smoothedEAR;
     let isBlinking = false;
 
     if (ear < this.EAR_THRESHOLD) {
       this.consecBelow++;
     } else {
       if (this.consecBelow >= this.CONSEC_FRAMES && this.wasBelow) {
-        // Blink detected
-        this.totalBlinks++;
-        this.lastBlinkTime = now;
-        this.blinkTimestamps.push(now);
-        isBlinking = true;
+        // Only register if enough time has passed since last blink
+        if (now - this.lastBlinkTime > this.MIN_BLINK_INTERVAL_MS) {
+          this.totalBlinks++;
+          this.lastBlinkTime = now;
+          this.blinkTimestamps.push(now);
+          isBlinking = true;
+        }
       }
       this.consecBelow = 0;
     }
